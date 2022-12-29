@@ -1,0 +1,42 @@
+{
+    "name": "metadocx/php-pdf-converter",
+    "description": "Metadocx reporting PDF report converter.",
+    "license": [
+        "AGPL-3.0-or-later",
+        "MIT"
+    ],
+    "homepage": "https://www.metadocx.com",
+    "support": {
+        "issues": "https://github.com/metadocx/php-pdf-converter/issues",
+        "source": "https://github.com/metadocx/php-pdf-converter"
+    },
+    "authors": [
+        {
+            "name": "Benoit Gauthier",
+            "email": "bgauthier@metadocx.com"
+        }
+    ],    
+    "require": {
+        "php": "^7.3|^8.0",
+        "ext-json": "*"        
+    },    
+    "autoload": {
+        "psr-4": {
+            "Metadocx\\Reporting\\Converters\\PDF\\": "/src"            
+        }
+    },
+    "extra": {      
+        "laravel": {
+            "providers": [
+                "Metadocx\\Reporting\\Converters\\PDF\\PDFConverterServiceProvider"
+            ]
+        }
+    },    
+    "config": {
+        "sort-packages": true
+    },    
+    "minimum-stability": "dev",
+    "require-dev": {
+        "squizlabs/php_codesniffer": "4.0.x-dev"
+    }
+}
