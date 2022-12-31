@@ -105,7 +105,7 @@ class PDFConverter {
                         <meta charset=\"UTF-8\" />
                         <style>";
         $sPage .= file_get_contents("https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css");
-        $sPage .= file_get_contents(public_path("css/metadocx.css"));        
+        $sPage .= file_get_contents("https://cdn.jsdelivr.net/gh/metadocx/reporting@latest/dist/metadocx.min.css");        
         
         $sPage .= "     </style>                        
                     </head>
@@ -141,7 +141,9 @@ class PDFConverter {
         $this->margin_bottom = $options["page"]["margins"]["bottom"];
         $this->margin_left = $options["page"]["margins"]["left"];
         $this->margin_right = $options["page"]["margins"]["right"];
-        $this->grayscale = boolval($options["grayscale"]);
+        if ($this->toBool($options["grayscale"])) {
+            $this->grayscale = true;
+        }
         if (!$this->toBool($options["pdfCompression"])) {
             $this->no_pdf_compression = true;
         }
