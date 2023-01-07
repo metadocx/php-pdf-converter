@@ -13,8 +13,8 @@ Route::post("/Metadocx/Convert/PDF", function(Request $request) {
     if ($sFileName !== false) {       
         $headers = ["Content-Type"=> "application/pdf"];
         return response()
-                ->download($sFileName, "Report.pdf", $headers)
-                ->deleteFileAfterSend(true);
+                ->download($sFileName, "Report.pdf", $headers);
+                ///->deleteFileAfterSend(true);
     } 
 
 });
