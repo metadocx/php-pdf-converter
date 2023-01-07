@@ -23,6 +23,9 @@ class PDFConverter {
 
     public function convert($sContent) {
 
+        
+        $bDocker = false;
+
         /**
          * Prepare html input file
          */
@@ -31,19 +34,26 @@ class PDFConverter {
 
         /**
          * Prepare output file name
-         */        
-        $sFileName = "app/" . uniqid("PDF") . ".pdf";
-        $this->_sOutputFileName = storage_path($sFileName);
+         */ 
+        $sFileName = uniqid("PDF") . ".pdf";
+
+        if ($bDocker) {
+            $this->_sOutputFileName = "/tmp/data/" . $sFileName;
+        } else {            
+            $this->_sOutputFileName = storage_path("app/" . $sFileName);
+        }
+        
         
         switch ($this->_sConverterTool)  {           
             case "wkhtmltopdf":
-                $this->wkhtmltopdf();
+                $this->wkhtmltopdf($bDocker);
                 break;
         }
 
-        
+        /**
+         * Return file name for download
+         */
         if (file_exists($this->_sOutputFileName)) {
-
             return $this->_sOutputFileName;
         } else {
             return false;
@@ -51,9 +61,18 @@ class PDFConverter {
 
     }   
 
-    protected function wkhtmltopdf() {
+    
+    /**
+     * Use wkhtmltopdf to convert html to pdf
+     */
+    protected function wkhtmltopdf($bDocker = false) {
 
-        $sCommand = "/usr/local/bin/wkhtmltopdf ";        
+        if ($bDocker) {
+            $sCommand = "wkhtmltopdf ";        
+        } else {
+            $sCommand = "/usr/local/bin/wkhtmltopdf ";        
+        }
+        
         if (array_key_exists("toc", $this->_aOptions)) {
             $sCommand .= "toc --xsl-style-sheet " . public_path("css/toc.xsl") . " ";
         }
@@ -86,19 +105,50 @@ class PDFConverter {
             
         }
 
-        $sCommand .= $this->_sInputFileName . " ";
+        if ($bDocker) {
+            $sCommand .= "/tmp/data/" . basename($this->_sInputFileName) . " ";        
+        } else {
+            $sCommand .= $this->_sInputFileName . " ";        
+        }
+        
         $sCommand .= $this->_sOutputFileName;
 
-        Log::debug($sCommand);
+       
+        if ($bDocker) {
 
-        exec($sCommand, $output, $return_var);
+            //Log::debug("/usr/bin/docker run --rm -v " . storage_path("app") . ":/tmp/data metadocxpdf " . $sCommand . " 2>&1");
+            exec("sudo /usr/bin/docker run --rm -v " . storage_path("app") . ":/tmp/data metadocxpdf " . $sCommand . " 2>&1", $output, $return_var);
+            
+            /**
+             * Reset output file path
+             */
+            $this->_sOutputFileName = storage_path("app/" . basename($this->_sOutputFileName));
+
+        } else {
+
+            //Log::debug($sCommand);
+            exec($sCommand, $output, $return_var);
+
+        }
+
+        /**
+         * Remove temp html file
+         */
+        if (file_exists($this->_sInputFileName)) {
+            unlink($this->_sInputFileName);
+        }
 
 
     }
 
+    /**
+     * Create the html file from report html
+     */
     protected function prepareHTMLFile($sContent) {
 
+
         $this->_sInputFileName = storage_path("app/" . uniqid("PDF") . ".html");
+
         $sPage = "<!DOCTYPE html>
                   <html lang=\"en\">
                     <head>
@@ -121,6 +171,9 @@ class PDFConverter {
         
     }
 
+    /**
+     * Load options for pdf export
+     */
     public function loadOptions($options) {
 
         $this->_aOptions = [];
@@ -213,6 +266,9 @@ class PDFConverter {
         return $this;
     }
 
+    /**
+     * Convert values to bool
+     */
     private function toBool($value) {
         if (is_bool($value)) {
             return (bool) $value;
