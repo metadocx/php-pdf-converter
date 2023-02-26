@@ -6,54 +6,247 @@ use Illuminate\Support\Facades\Log;
 
 class PDFConverter {
 
+    /**
+     * Tool to use to convert htl to PDF
+     *
+     * @var string
+     */
     protected $_sConverterTool = "wkhtmltopdf";
     protected $_sInputHTML = null;
+    /**
+     * Cover page html file name
+     *
+     * @var [type]
+     */
+    protected $_sInputCoverPageFileName = null;
+    /**
+     * Main content html file name
+     *
+     * @var [type]
+     */
     protected $_sInputFileName = null;
+    /**
+     * Output cover page (pdf) file name
+     *
+     * @var [type]
+     */
+    protected $_sOutputCoverPageFileName = null;
+    /**
+     * Output main content (pdf) file name
+     *
+     * @var [type]
+     */
+    protected $_sOutputContentFileName = null;
+    /**
+     * Final merged pdf file name
+     *
+     * @var [type]
+     */
     protected $_sOutputFileName = null;
+    /**
+     * If we export each page as an image
+     *
+     * @var boolean
+     */
+    protected $_bConvertToImages = false;
+    /**
+     * Temporary folder where files will be generated
+     *
+     * @var [type]
+     */
+    protected $_sTempPath = null;
+    /**
+     * If document has a cover page
+     *
+     * @var boolean
+     */
+    protected $_bHasCoverPage = false;    
+    /**
+     * Coversion tool parameters
+     *
+     * @var array
+     */
     protected $_aOptions = [];
+    
+    /**
+     * wkhtmltopdf global options, must be inserted at start of command line
+     *
+     * @var array
+     */
+    protected $_aGlobalOptions = [
+        "collate", "no-collate", "cookie-jar", "copies", "dpi",
+        "extended-help", "grayscale", "help", "htmldoc", "image-dpi",
+        "image-quality", "license", "log-level", "lowquality", "manpage",
+        "margin-bottom", "margin-left", "margin-right", "margin-top",
+        "orientation", "page-height", "page-size", "page-width", "no-pdf-coompression",
+        "quiet", "read-args-from-stdin", "readme", "title", "use-xserver", "version"
+    ];
+
+    /**
+     * wkhtmltopdf toc options
+     *
+     * @var array
+     */
+    protected $_aOutlineOptions = [
+        "dump-default-toc-xsl", "dump-outline", "outline", "no-outline", "outline-depth"        
+    ];
+
+    /**
+     * wkhtmltopdf page options
+     *
+     * @var array
+     */
+    protected $_aPageOptions = [
+        "allow", "background","no-background","bypass-proxy-for","cache-dir","checkbox-checked-svg",
+        "checkbox-svg","cookie","custom-header","custom-header-propagation","no-custom-header-propagation",
+        "debug-javascript","no-debug-javascript","default-header","encoding","disable-external-links",
+        "enable-external-links","disable-forms","enable-forms","images","no-images","disable-internal-links",
+        "enable-internal-links","disable-javascript","enable-javascript","javascript-delay","keep-relative-links",
+        "load-error-handling","load-media-error-handling","disable-local-file-access","enable-local-file-access",
+        "minimum-font-size","exclude-from-outline","include-in-outline","page-offset","password","disable-plugins",
+        "enable-plugins","post","post-file","print-media-type","no-print-media-type","proxy","proxy-hostname-lookup",
+        "radiobutton-checked-svg","radiobutton-svg","resolve-relative-links","run-script","disable-smart-shrinking",
+        "enable-smart-shrinking","ssl-crt-path","ssl-key-password","ssl-key-path","stop-slow-scripts",
+        "no-stop-slow-scripts","disable-toc-back-links","enable-toc-back-links","user-style-sheet","username",
+        "viewport-size","window-status","zoom",
+    ];
+
+    /**
+     * wkhtmltopdf options that must be processed as strings
+     *
+     * @var array
+     */
     protected $_aStringAttributes = [
         "header-left", "header-center", "header-right",
         "footer-left", "footer-center", "footer-right"
     ];
 
+    /**
+     * wkhtmltopdf options that must be processed as sizes append mm
+     *
+     * @var array
+     */
     protected $_aSizeAttributes = [
         "page-width", "page-height",
         "margin-top", "margin-bottom", "margin-left", "margin-right"
     ];
 
-    public function convert($sContent) {
+    /**
+     * Check if option is a global option
+     *
+     * @param [type] $sOptionName
+     * @return boolean
+     */
+    protected function isGlobalOption($sOptionName) {
+        return \in_array($sOptionName, $this->_aGlobalOptions);
+    }
 
-        
+    /**
+     * Check if option is a page option
+     *
+     * @param [type] $sOptionName
+     * @return boolean
+     */
+    protected function isPageOption($sOptionName) {
+        return \in_array($sOptionName, $this->_aPageOptions);
+    }
+
+    /**
+     * Indicates if we must convert pdf to images
+     *
+     * @return void
+     */
+    public function getConvertToImages() {
+        return $this->_bConvertToImages;
+    }
+
+    /**
+     * Indicates if we must convert pdf to images
+     *
+     * @param [type] $bConvert
+     * @return void
+     */
+    public function setConvertToImages($bConvert) {
+        $this->_bConvertToImages = $this->toBool($bConvert);
+        return $this;
+    }
+
+    /**
+     * Convert HTML to PDF
+     *
+     * @param [type] $sCoverPage
+     * @param [type] $sContent
+     * @return void
+     */
+    public function convert($sCoverPage, $sContent) {
+
+        /**
+         * Indicates if we use docker to run conversion tool
+         */
         $bDocker = false;
 
         /**
-         * Prepare html input file
+         * Prepare html input files 
          */
-        $this->prepareHTMLFile($sContent);
-        
+        $this->prepareHTMLFile($sCoverPage, $sContent);       
 
         /**
          * Prepare output file name
          */ 
-        $sFileName = uniqid("PDF") . ".pdf";
 
+        /**
+         * Create a temporary folder to save temp files
+         */
+        $this->_sTempPath = uniqid("PDF");       
+        /**
+         * Set unique file names for temp files
+         */ 
+        $sCoverPageFileName = uniqid("PDFCover") . ".pdf";
+        $sContentFileName = uniqid("PDFContent") . ".pdf";
+        $sFileName = uniqid("PDF") . ".pdf";
+        
         if ($bDocker) {
+            /**
+             * Fix path for docker, /tmp volume will be mounted to temp path 
+             */
+            $this->_sOutputCoverPageFileName = "/tmp/data/" . $sCoverPageFileName;
+            $this->_sOutputContentFileName = "/tmp/data/" . $sContentFileName;
             $this->_sOutputFileName = "/tmp/data/" . $sFileName;
-        } else {            
-            $this->_sOutputFileName = storage_path("app/" . $sFileName);
+        } else {     
+            /**
+             * Create temp path folder
+             */            
+            mkdir(storage_path("app/" . $this->_sTempPath));
+            $this->_sOutputCoverPageFileName = storage_path("app/" . $this->_sTempPath . "/" . $sCoverPageFileName);
+            $this->_sOutputContentFileName = storage_path("app/" . $this->_sTempPath . "/" . $sContentFileName);
+            $this->_sOutputFileName = storage_path("app/" . $this->_sTempPath . "/" . $sFileName);
         }
         
-        
+        /**
+         * Call conversion tool
+         */
         switch ($this->_sConverterTool)  {           
             case "wkhtmltopdf":
                 $this->wkhtmltopdf($bDocker);
                 break;
         }
+    
+        /**
+         * Convert generated PDF file to images
+         */
+        $aPages = null;
+        if ($this->getConvertToImages()) {
+            $aPages = $this->convertPDFToImages();
+        }
+
+        $this->cleanUp();
 
         /**
-         * Return file name for download
+         * Return file name or image array for download
          */
-        if (file_exists($this->_sOutputFileName)) {
+        if ($aPages !== null && is_array($aPages)) {
+            return $aPages;
+        } elseif (file_exists($this->_sOutputFileName)) {
             return $this->_sOutputFileName;
         } else {
             return false;
@@ -61,28 +254,32 @@ class PDFConverter {
 
     }   
 
-    
-    /**
-     * Use wkhtmltopdf to convert html to pdf
-     */
-    protected function wkhtmltopdf($bDocker = false) {
+    protected function appendWkhtmltopdfCommandLineArguments($bGlobal = false, $bPage = false, $bNoMargins = false) {
 
-        if ($bDocker) {
-            $sCommand = "wkhtmltopdf ";        
-        } else {
-            $sCommand = "/usr/local/bin/wkhtmltopdf ";        
-        }
-        
-        if (array_key_exists("toc", $this->_aOptions)) {
-            $sCommand .= "toc --xsl-style-sheet " . public_path("css/toc.xsl") . " ";
-        }
+        $sCommand = "";
+
         foreach($this->_aOptions as $name => $value) {
-            
-            Log::debug($name . " " . print_r($value, true));
+         
+            if ($bGlobal && !$this->isGlobalOption($name)) {
+                continue;
+            }
+
+            if ($bPage && !$this->isPageOption($name)) {
+                continue;
+            }
+                        
+            /**
+             * For cover page replace margins to 0
+             */
+            if ($bNoMargins && in_array($name, $this->_aSizeAttributes)) {
+                $value = 0;
+            }
 
             if ($name == "toc") {
                 // Skip table of content
                 continue;
+            } elseif( $name == "zoom") {                
+                $value = "1.25";                
             }
             
             if ($value === true || $value === false) {
@@ -105,13 +302,109 @@ class PDFConverter {
             
         }
 
+        return $sCommand;
+
+    }
+
+
+    protected function wkhtmltopdfCoverPage($bDocker = false) {
+
+        /**
+         * Check if we have a cover page if not exit
+         */
+        if (!$this->_bHasCoverPage) {
+            return null;
+        }
+
+        /**
+         * Build wkhtmltopdf command
+         */
+        if ($bDocker) {
+            $sCommand = "wkhtmltopdf ";        
+        } else {
+            $sCommand = "/usr/local/bin/wkhtmltopdf ";        
+        }
+                
+        /**
+         * Global options
+         */
+        $sCommand .= $this->appendWkhtmltopdfCommandLineArguments(true, false, true);        
+
+        if ($bDocker) {
+            $sCommand .= "/tmp/data/" . basename($this->_sInputCoverPageFileName) . " ";        
+        } else {
+            $sCommand .= $this->_sInputCoverPageFileName . " ";        
+        }
+        
+        /**
+         * Page options
+         */
+        $sCommand .= $this->appendWkhtmltopdfCommandLineArguments(false, true, true);   
+        
+        $sCommand .= $this->_sOutputCoverPageFileName;
+
+       
+        if ($bDocker) {
+
+            exec("sudo /usr/bin/docker run --rm -v " . storage_path("app") . ":/tmp/data metadocxpdf " . $sCommand . " 2>&1", $output, $return_var);
+            
+            /**
+             * Reset output file path
+             */
+            $this->_sOutputFileName = storage_path("app/" . basename($this->_sOutputFileName));
+
+        } else {
+
+            Log::debug($sCommand);
+            exec($sCommand, $output, $return_var);
+
+        }
+
+
+    }
+
+    /**
+     * Generate main content 
+     *
+     * @param boolean $bDocker
+     * @return void
+     */
+    protected function wkhtmltopdfContent($bDocker = false) {
+
+        if ($bDocker) {
+            $sCommand = "wkhtmltopdf ";        
+        } else {
+            $sCommand = "/usr/local/bin/wkhtmltopdf ";        
+        }
+                
+        /**
+         * Global options
+         */
+        $sCommand .= $this->appendWkhtmltopdfCommandLineArguments(true, false);       
+                  
+        /**
+         * Table of content
+         */
+        if (array_key_exists("toc", $this->_aOptions)) {
+            $sCommand .= "toc --xsl-style-sheet " . public_path("css/toc.xsl") . " ";
+        }
+        
+
+        /**
+         * Page 
+         */
         if ($bDocker) {
             $sCommand .= "/tmp/data/" . basename($this->_sInputFileName) . " ";        
         } else {
             $sCommand .= $this->_sInputFileName . " ";        
         }
         
-        $sCommand .= $this->_sOutputFileName;
+         /**
+         * Page options
+         */
+        $sCommand .= $this->appendWkhtmltopdfCommandLineArguments(false, true);  
+        
+        $sCommand .= $this->_sOutputContentFileName;
 
        
         if ($bDocker) {
@@ -126,29 +419,138 @@ class PDFConverter {
 
         } else {
 
-            //Log::debug($sCommand);
+            Log::debug($sCommand);
             exec($sCommand, $output, $return_var);
 
-        }
-
-        /**
-         * Remove temp html file
-         */
-        if (file_exists($this->_sInputFileName)) {
-            unlink($this->_sInputFileName);
         }
 
 
     }
 
     /**
-     * Create the html file from report html
+     * Merge cover page an main content
+     *
+     * @param boolean $bDocker
+     * @return void
      */
-    protected function prepareHTMLFile($sContent) {
+    protected function wkhtmltopdfUnite($bDocker = false) {
 
+        $aFiles = [];
+        if (file_exists($this->_sOutputCoverPageFileName)) {
+            
+            // Take only first page of PDF
+            $sCommand = "sudo /usr/bin/pdfseparate -f 1 -l 1 " . $this->_sOutputCoverPageFileName . " " . $this->_sOutputCoverPageFileName . ".p1.pdf";
+            Log::debug($sCommand);
+            exec($sCommand, $output, $return_var);
 
+            if (file_exists($this->_sOutputCoverPageFileName . ".p1.pdf")) {
+                $aFiles[] = $this->_sOutputCoverPageFileName . ".p1.pdf";
+            } else {
+                $aFiles[] = $this->_sOutputCoverPageFileName;
+            }
+
+        }
+        if (file_exists($this->_sOutputContentFileName)) {
+            $aFiles[] = $this->_sOutputContentFileName;
+        }
+
+        if (count($aFiles) > 1) {
+            $sCommand = "sudo /usr/bin/pdfunite " . implode(" ", $aFiles) . " " . $this->_sOutputFileName;
+
+            Log::debug($sCommand);
+            exec($sCommand, $output, $return_var);
+        } elseif (count($aFiles)==1) {
+            /**
+             * Only one file, use this file as the final pdf             
+             */
+            copy($aFiles[0], $this->_sOutputFileName);
+        }
+   
+
+    }
+    
+    /**
+     * Use wkhtmltopdf to convert html to pdf
+     */
+    protected function wkhtmltopdf($bDocker = false) {
+
+        /**
+         * Create a separate pdf file for the cover page (if one is available)
+         * This is done to manage the margins
+         */
+        $this->wkhtmltopdfCoverPage($bDocker);
+        /**
+         * Create main document pdf file
+         */
+        $this->wkhtmltopdfContent($bDocker);
+        /**
+         * Merge cover page and content into one final pdf file
+         */
+        $this->wkhtmltopdfUnite($bDocker);
+        
+
+    }
+
+    /**
+     * Convert each page of a PDF file in images
+     * Returns array of base64 encoded images
+     *
+     * @return void
+     */
+    protected function convertPDFToImages() {
+        
+        $aPages = [];
+        if (file_exists($this->_sOutputFileName)) {
+
+            $aPathInfo = pathinfo($this->_sOutputFileName);
+        
+            exec("sudo /usr/bin/pdftoppm -png " . $this->_sOutputFileName . " " . $aPathInfo["dirname"] . "/PDF", $output, $return_var);
+                                   
+            foreach (glob($aPathInfo["dirname"] . "/*.png") as $filename) {
+                $aPages[] = "data:image/png;base64," . base64_encode(file_get_contents($filename));                
+            }
+        }
+
+        return $aPages;
+    }
+
+    /**
+     * Create the html files from report html and cover page
+     */
+    protected function prepareHTMLFile($sCoverPage, $sContent) {
+
+        $this->_sInputCoverPageFileName = storage_path("app/" . uniqid("PDF") . ".html");
         $this->_sInputFileName = storage_path("app/" . uniqid("PDF") . ".html");
 
+        /**
+         * Cover page
+         */
+        if ($this->_bHasCoverPage) {
+
+            $sPage = "<!DOCTYPE html>
+                  <html lang=\"en\">
+                    <head>
+                        <meta charset=\"UTF-8\" />
+                        <style>";
+            $sPage .= file_get_contents("https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css");
+            $sPage .= file_get_contents("https://cdn.jsdelivr.net/gh/metadocx/reporting@latest/dist/metadocx.min.css");        
+            
+            $sPage .= "     </style>                        
+                        </head>
+                        <body style=\"background-color:#fff;\">" . PHP_EOL;
+            
+            $sPage .= base64_decode($sCoverPage);
+
+            $sPage .= "</body>
+                    </html>";
+
+            $nResult = file_put_contents($this->_sInputCoverPageFileName, $sPage);
+
+        }
+
+        /**
+         * Report 
+         */
         $sPage = "<!DOCTYPE html>
                   <html lang=\"en\">
                     <head>
@@ -167,8 +569,16 @@ class PDFConverter {
                 </html>";
 
         $nResult = file_put_contents($this->_sInputFileName, $sPage);
-        
-        
+               
+    }
+
+    /**
+     * Clean up temp files
+     *
+     * @return void
+     */
+    public function cleanUp() {
+
     }
 
     /**
@@ -177,6 +587,8 @@ class PDFConverter {
     public function loadOptions($options) {
 
         $this->_aOptions = [];
+
+        $this->_bHasCoverPage = $this->toBool($options["coverpage"]);
 
         $this->print_media_type = true;            
         //$this->disable_smart_shrinking = true;
@@ -255,11 +667,23 @@ class PDFConverter {
 
     }
 
+    /**
+     * Default getter
+     *
+     * @param string $name
+     * @return void
+     */
     public function __get(string $name) {
         $name = str_replace("_", "-", $name);
         return $this->_aOptions[$name];
     }
 
+    /**
+     * Default setter
+     *
+     * @param string $name
+     * @param mixed $value
+     */
     public function __set(string $name, mixed $value) {
         $name = str_replace("_", "-", $name);
         $this->_aOptions[$name] = $value;

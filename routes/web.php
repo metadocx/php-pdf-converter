@@ -9,11 +9,15 @@ Route::post("/Metadocx/Convert/PDF", function(Request $request) {
 
     $oPDFConverter = new PDFConverter();    
     $oPDFConverter->loadOptions($request->input("PDFOptions"));    
-    $sFileName = $oPDFConverter->convert($request->input("HTML"));
-    if ($sFileName !== false) {       
+    $oPDFConverter->setConvertToImages($request->input("ConvertToImages"));
+    $aData = $oPDFConverter->convert($request->input("CoverPage"), $request->input("HTML"));
+    if (is_array($aData)) {
+        return response()->json($aData);
+    } elseif ($aData !== false && is_string($aData)) {       
+        // Single file download
         $headers = ["Content-Type"=> "application/pdf"];
         return response()
-                ->download($sFileName, "Report.pdf", $headers)
+                ->download($aData, "Report.pdf", $headers)
                 ->deleteFileAfterSend(true);
     } 
 
